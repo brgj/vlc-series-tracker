@@ -25,7 +25,7 @@
 				 author = "Brad Johnson" ;
 				 shortdesc = "Test Netfile Open";
 				 description = "";
-				 capabilities = { "input-listener", "meta-listener" } }
+				 capabilities = { "menu", "meta-listener" } }
 	end
 
 --[[ Global vars ]]
@@ -35,65 +35,108 @@
 
 --[[ Hooks ]]
 
-	-- Activation hook
 	function activate()
-		vlc.msg.info("[NETFILE OPEN TEST] Activated")
-		stopwords = build_stopwords_set()
-		startNetFilePlay()
+		profiles = {}
+		config_file = vlc.config.configdir() .. "/series-tracker.conf"
+
+		local VLC_extraintf, VLC_luaintf, t, ti = VLC_intf_settings()
+		trigger_menu() 
+		-- if not ti or VLC_luaintf~=intf_script then else trigger_menu(1) end
 	end
 
-	-- Deactivation hook
 	function deactivate()
-		vlc.msg.info("[NETFILE OPEN TEST] Deactivated")
+	dlg:delete()
+	-- vlc.deactivate()
 	end
 
-	function input_changed()
-		fileInfo()
-		find_similar()
-		-- local dialog = vlc.dialog( "My VLC Extension" )
-		-- dialog:add_label("test", 1, 1, 5, 10)
-		-- dialog:add_button("OK", function () dialog:delete(); test(); return nil end, 3, 20, 1, 5)
+	function close()
+	dlg:hide()
 	end
 
-	-- function test()
-	-- 	vlc.msg.info("cool")
-	-- end
-
-	function meta_changed()
-		-- related to capabilities={"meta-listener"} in descriptor()
-		-- triggered by available media input meta data?
+	function menu()
+	return {"Set Interface"}
 	end
 
-	function Log(lm)
-		vlc.msg.info("[NETFILE OPEN TEST] " .. lm)
+	function trigger_menu()
+	if dlg then dlg:delete() end
+	open_dialog()
 	end
 
---[[ Start ]]
+	--------------  Save Profiles Dialog --------------------
 
-	function fileInfo()
-		Log("Name: "..vlc.input.item():name())
-		Log("URI: "..vlc.input.item():uri())
-		Log("Duration: "..vlc.input.item():duration())
-		Log(inspect(getmetatable(vlc.input.item())))
+	function open_dialog()
+	dlg = vlc.dialog(descriptor().title)
+
+	dlg:add_label("<center><h3>Interface</h3></center>", 1, 1, 4, 1)
+	cb_extraintf = dlg:add_check_box("Enable interface: ", true, 1, 3, 1, 1)
+	ti_luaintf = dlg:add_text_input(intf_script, 2, 3, 2, 1)
+	local VLC_extraintf, VLC_luaintf, t, ti = VLC_intf_settings()
+	lb_message = dlg:add_label("Current status: " .. (ti and "ENABLED" or "DISABLED") .. ". Interface: " .. tostring(VLC_luaintf), 1, 4, 3, 1)
+
+	dlg:add_label("<center><h3>Series Tracker Location</h3></center>", 1, 5, 4, 1)
+	series_tracker_dd = dlg:add_dropdown(1, 7, 4, 1)
+		series_tracker_dd:add_value("Track Series In Media Folder", 1)
+		series_tracker_dd:add_value("Track Series In Config File", 2)
+
+	dlg:add_button("Save", save_series_tracker_settings, 1, 8, 2, 1)
+	dlg:show()
 	end
 
-	function startNetFilePlay()
-		local path = "192.168.0.3/share/TV_Shows/It's Always Sunny in Philadelphia/Season 12/"
-		local target = "Its.Always.Sunny.In.Philadelphia.S12E06.Hero.or.Hate.Crime.1080p.AMZN.WEB-DL.DD+2.0.H.264-CtrlHD.mkv"
+	function save_series_tracker_settings()
+	local tracker_option = series_tracker_dd:get_value()
+	
+	io.output(config_file)
+	io.write("tracker_option="..tracker_option)
+	io.close()
+		
+	local VLC_extraintf, VLC_luaintf, t, ti = VLC_intf_settings()
 
-		local new_item = {}
-			new_item.path = "file://"..((path..target):gsub(" ", "%%20"))
-			new_item.name = file
-		Log("NET new_item="..new_item.path)
-		vlc.playlist.enqueue({new_item})
-		vlc.playlist.play()
+	if cb_extraintf:get_checked() then
+		--vlc.config.set("extraintf", "luaintf")
+		if not ti then table.insert(t, "luaintf") end
+		vlc.config.set("lua-intf", ti_luaintf:get_text())
+	else
+		--vlc.config.set("extraintf", "")
+		if ti then table.remove(t, ti) end
+	end
+	vlc.config.set("extraintf", table.concat(t, ":"))
+
+	lb_message:set_text("Please restart VLC for changes to take effect!")
 	end
 
-	function startLocalFilePlay()
-		local new_item = {} 
-			new_item.path = "file:///C:\\Users\\Brad\\Downloads\\test.mkv"
-			new_item.name = file
-		Log("LOCAL new_item="..new_item.path)
-		vlc.playlist.enqueue({new_item})
-		vlc.playlist.play()
+	function SplitString(s, d) -- string, delimiter pattern
+	local t = {}
+	local i = 1
+	local ss, j, k
+	local b = false
+	while true do
+		j, k = string.find(s, d, i)
+		if j then
+		ss = string.sub(s, i, j - 1)
+		i = k + 1
+		else
+		ss = string.sub(s, i)
+		b = true
+		end
+		table.insert(t, ss)
+		if b then break end
+	end
+	return t
+	end
+
+	function VLC_intf_settings()
+	local VLC_extraintf = vlc.config.get("extraintf") -- enabled VLC interfaces
+	local VLC_luaintf = vlc.config.get("lua-intf") -- Lua Interface script name
+	local t = {}
+	local ti = false
+	if VLC_extraintf then
+		t = SplitString(VLC_extraintf, ":")
+		for i, v in ipairs(t) do
+		if v == "luaintf" then
+			ti = i
+			break
+		end
+		end
+	end
+	return VLC_extraintf, VLC_luaintf, t, ti
 	end
